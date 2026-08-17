@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 
 export function PageHero({
@@ -10,8 +11,16 @@ export function PageHero({
   lede: string;
 }) {
   return (
-    <section className="border-b border-forest/10 bg-[linear-gradient(180deg,#163326_0%,#0c1f18_100%)] text-cream">
-      <div className="mx-auto max-w-6xl px-4 py-14 sm:px-6 sm:py-16">
+    <section className="relative isolate overflow-hidden border-b border-forest/10 text-cream">
+      <Image
+        src="/brand/hero.jpg"
+        alt=""
+        fill
+        className="object-cover object-[center_35%]"
+        sizes="100vw"
+      />
+      <div className="absolute inset-0 bg-forest-deep/75" />
+      <div className="relative mx-auto max-w-6xl px-4 py-14 sm:px-6 sm:py-16">
         <p className="text-xs tracking-[0.28em] text-brass uppercase">{kicker}</p>
         <h1 className="font-display mt-3 max-w-3xl text-4xl leading-tight sm:text-5xl">
           {title}

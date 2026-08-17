@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { TreeMark } from "@/components/tree-mark";
+import { BrandLogo } from "@/components/brand-logo";
 import { NAV, SITE } from "@/lib/site";
 
 export function SiteFooter() {
@@ -11,14 +11,11 @@ export function SiteFooter() {
     <footer className="mt-auto bg-forest-deep text-cream">
       <div className="mx-auto grid max-w-6xl gap-10 px-4 py-14 sm:px-6 md:grid-cols-4">
         <div className="md:col-span-2">
-          <div className="flex items-center gap-3">
-            <TreeMark className="h-10 w-10 text-brass" />
-            <div>
-              <p className="font-display text-2xl">{SITE.shortName}</p>
-              <p className="text-xs tracking-[0.16em] text-moss uppercase">
-                {SITE.legalName}
-              </p>
-            </div>
+          <div>
+            <BrandLogo className="h-14 w-auto" />
+            <p className="mt-3 text-xs tracking-[0.16em] text-moss uppercase">
+              {SITE.legalName}
+            </p>
           </div>
           <p className="mt-4 max-w-md text-sm leading-relaxed text-moss">
             Serving owners of Thoms Estate in North Asheville. This site is the

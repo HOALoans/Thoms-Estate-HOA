@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { Menu, X } from "lucide-react";
 import { useState } from "react";
 
-import { TreeMark } from "@/components/tree-mark";
+import { BrandLogo } from "@/components/brand-logo";
 import { NAV, SITE } from "@/lib/site";
 
 export function SiteHeader() {
@@ -13,15 +13,12 @@ export function SiteHeader() {
   const [open, setOpen] = useState(false);
 
   return (
-    <header className="sticky top-0 z-50 border-b border-forest/10 bg-cream/90 backdrop-blur-md">
+    <header className="sticky top-0 z-50 border-b border-white/10 bg-forest-deep/95 backdrop-blur-md">
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
-        <Link href="/" className="flex items-center gap-3 text-forest">
-          <TreeMark className="h-11 w-11" />
-          <span className="leading-tight">
-            <span className="font-display block text-lg tracking-wide">
-              Thoms Estate
-            </span>
-            <span className="block text-[11px] font-medium tracking-[0.18em] text-sage uppercase">
+        <Link href="/" className="flex items-center gap-3 text-cream">
+          <BrandLogo className="h-11 w-auto sm:h-12" />
+          <span className="hidden leading-tight sm:block">
+            <span className="block text-[11px] font-medium tracking-[0.18em] text-moss uppercase">
               Homeowners Association
             </span>
           </span>
@@ -37,8 +34,8 @@ export function SiteHeader() {
                 href={item.href}
                 className={`rounded-full px-3 py-1.5 text-sm transition ${
                   active
-                    ? "bg-forest text-cream"
-                    : "text-forest/80 hover:bg-parchment hover:text-forest"
+                    ? "bg-cream text-forest-deep"
+                    : "text-cream/85 hover:bg-white/10 hover:text-cream"
                 }`}
               >
                 {item.label}
@@ -49,7 +46,7 @@ export function SiteHeader() {
 
         <button
           type="button"
-          className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-forest/20 text-forest xl:hidden"
+          className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/25 text-cream xl:hidden"
           onClick={() => setOpen((value) => !value)}
           aria-expanded={open}
           aria-label="Toggle navigation"
@@ -59,18 +56,18 @@ export function SiteHeader() {
       </div>
 
       {open ? (
-        <nav className="border-t border-forest/10 bg-cream px-4 py-3 xl:hidden">
+        <nav className="border-t border-white/10 bg-forest-deep px-4 py-3 xl:hidden">
           {NAV.map((item) => (
             <Link
               key={item.href}
               href={item.href}
               onClick={() => setOpen(false)}
-              className="block rounded-lg px-3 py-2 text-forest hover:bg-parchment"
+              className="block rounded-lg px-3 py-2 text-cream hover:bg-white/10"
             >
               {item.label}
             </Link>
           ))}
-          <p className="px-3 pt-2 text-xs text-muted">{SITE.domain}</p>
+          <p className="px-3 pt-2 text-xs text-moss">{SITE.domain}</p>
         </nav>
       ) : null}
     </header>

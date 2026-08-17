@@ -15,40 +15,41 @@ import { SITE } from "@/lib/site";
 export default function HomePage() {
   return (
     <>
-      <section className="relative isolate overflow-hidden bg-forest-deep text-cream">
+      <section className="relative isolate min-h-[28rem] overflow-hidden bg-forest-deep text-cream sm:min-h-[34rem]">
         <Image
-          src="https://images.unsplash.com/photo-1501785888041-af3ef285b470?auto=format&fit=crop&w=2000&q=80"
-          alt="Blue Ridge mountain ridgeline at dusk"
+          src="/brand/hero.jpg"
+          alt="Sunset over the Blue Ridge from Thoms Estate, with the association tree mark"
           fill
           priority
-          className="object-cover opacity-40"
+          className="object-cover object-[center_40%]"
         />
-        <div className="absolute inset-0 bg-gradient-to-b from-forest-deep/30 via-forest-deep/55 to-forest-deep" />
-        <div className="relative mx-auto max-w-6xl px-4 py-24 sm:px-6 sm:py-32">
-          <p className="text-xs tracking-[0.32em] text-brass uppercase">
-            Asheville, North Carolina
-          </p>
-          <h1 className="font-display mt-4 max-w-3xl text-5xl leading-[1.05] sm:text-7xl">
-            A mountain neighborhood, tended by its owners.
-          </h1>
-          <p className="mt-6 max-w-xl text-lg leading-relaxed text-moss">
-            {SITE.tagline} Documents, architectural review, meetings, and
-            common-area information for The Thoms Estate — minutes from downtown
-            Asheville, along Beaver Creek.
-          </p>
-          <div className="mt-8 flex flex-wrap gap-3">
-            <Link
-              href="/documents"
-              className="rounded-full bg-brass px-5 py-2.5 text-sm font-semibold text-forest-deep hover:bg-cream"
-            >
-              Association documents
-            </Link>
-            <Link
-              href="/contact"
-              className="rounded-full border border-cream/30 px-5 py-2.5 text-sm text-cream hover:bg-cream/10"
-            >
-              Contact the board
-            </Link>
+        <div className="absolute inset-0 bg-gradient-to-r from-forest-deep/80 via-forest-deep/35 to-transparent" />
+        <div className="relative mx-auto flex min-h-[28rem] max-w-6xl items-end px-4 py-16 sm:min-h-[34rem] sm:px-6 sm:py-20">
+          <div className="max-w-xl">
+            <p className="text-xs tracking-[0.32em] text-brass uppercase">
+              Homeowners Association
+            </p>
+            <h1 className="font-display mt-4 text-4xl leading-[1.05] sm:text-6xl">
+              A mountain neighborhood, tended by its owners.
+            </h1>
+            <p className="mt-5 text-base leading-relaxed text-cream/90 sm:text-lg">
+              {SITE.tagline} Documents, architectural review, meetings, and
+              common-area information for The Thoms Estate.
+            </p>
+            <div className="mt-8 flex flex-wrap gap-3">
+              <Link
+                href="/documents"
+                className="rounded-full bg-brass px-5 py-2.5 text-sm font-semibold text-forest-deep hover:bg-cream"
+              >
+                Association documents
+              </Link>
+              <Link
+                href="/contact"
+                className="rounded-full border border-cream/40 px-5 py-2.5 text-sm text-cream hover:bg-cream/10"
+              >
+                Contact the board
+              </Link>
+            </div>
           </div>
         </div>
       </section>
