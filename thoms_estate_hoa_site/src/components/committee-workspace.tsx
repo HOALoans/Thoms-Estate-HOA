@@ -9,21 +9,30 @@ import {
   actualLabel,
   approvedYear,
   committeeActual,
+  committeeExpenseAccounts,
   committeePlan,
+  committeeYearEndForecast,
   emptyRequest,
+  emptyStore,
+  ensureCommitteeAccounts,
   getAccount,
   money,
+  operatingYear,
+  prepareForBoardBudget,
   requestTotal,
   requestYear,
   seedFromApproved,
+  statusLabel,
   type Committee,
   type CommitteeRequest,
   type LineItem,
   type RequestStore,
+  budgetHistory,
 } from "@/lib/budget";
-import { budgetHistory } from "@/lib/budget";
+import { useTreasurer } from "@/lib/use-treasurer";
 
 export function CommitteeWorkspace({ committee }: { committee: Committee }) {
+  const { isTreasurer } = useTreasurer();
   const [store, setStore] = useState<RequestStore | null>(null);
   const [saving, setSaving] = useState<"idle" | "saving" | "saved" | "error">(
     "idle",
@@ -34,32 +43,59 @@ export function CommitteeWorkspace({ committee }: { committee: Committee }) {
     const res = await fetch("/api/budget/requests", { cache: "no-store" });
     const data = (await res.json()) as RequestStore;
     setStore(data);
-    setRequest(data.committees[committee.slug] ?? emptyRequest());
-  }, [committee.slug]);
+    const existing = data.committees[committee.slug];
+    setRequest(
+      existing?.lineItems?.length
+        ? ensureCommitteeAccounts(committee, existing)
+        : seedFromApproved(committee),
+    );
+  }, [committee]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  async function persist(next: CommitteeRequest, nextStore?: RequestStore) {
-    const base = nextStore ?? store ?? { requestYear, committees: {} };
-    const payload: RequestStore = {
-      requestYear: base.requestYear,
-      committees: {
-        ...base.committees,
-        [committee.slug]: { ...next, updatedAt: new Date().toISOString() },
-      },
-    };
-    setRequest(payload.committees[committee.slug]);
-    setStore(payload);
+  async function persist(next: CommitteeRequest) {
     setSaving("saving");
     try {
+      // Re-fetch so concurrent treasurer forecast edits are not clobbered.
+      const latestRes = await fetch("/api/budget/requests", {
+        cache: "no-store",
+      });
+      const latest = (await latestRes.json()) as RequestStore;
+      const base = latest ?? store ?? emptyStore();
+      const prepared = prepareForBoardBudget(
+        next,
+        base.committees[committee.slug],
+        isTreasurer,
+      );
+      const payload: RequestStore = {
+        ...base,
+        requestYear: base.requestYear ?? requestYear,
+        committees: {
+          ...base.committees,
+          [committee.slug]: {
+            ...prepared,
+            updatedAt: new Date().toISOString(),
+          },
+        },
+      };
+      setRequest(payload.committees[committee.slug]);
+      setStore(payload);
       const res = await fetch("/api/budget/requests", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          requestYear: payload.requestYear,
+          committees: {
+            [committee.slug]: payload.committees[committee.slug],
+          },
+        }),
       });
       if (!res.ok) throw new Error("save failed");
+      const saved = (await res.json()) as RequestStore;
+      setStore(saved);
+      setRequest(saved.committees[committee.slug] ?? prepared);
       setSaving("saved");
     } catch {
       setSaving("error");
@@ -69,32 +105,36 @@ export function CommitteeWorkspace({ committee }: { committee: Committee }) {
   const lastPlan = committeePlan(committee, approvedYear);
   const lastActual = committeeActual(committee, 2025);
   const total = requestTotal(request);
+  const yeTotal = store
+    ? committeeYearEndForecast(store, committee, "expense")
+    : undefined;
   const vsPlan = total - lastPlan;
   const prior =
     (budgetHistory.priorRequests as Record<
       string,
-      { year: number; items: { accountId: string; description: string; amount: number }[] }[]
+      {
+        year: number;
+        items: { accountId: string; description: string; amount: number }[];
+      }[]
     >)[committee.slug] ?? [];
 
   const expenseAccounts = useMemo(
-    () =>
-      committee.accounts.filter((id) => getAccount(id)?.kind === "expense"),
-    [committee.accounts],
+    () => committeeExpenseAccounts(committee),
+    [committee],
   );
 
   function updateItem(id: string, patch: Partial<LineItem>) {
-    const next = {
+    setRequest({
       ...request,
       lineItems: request.lineItems.map((item) =>
         item.id === id ? { ...item, ...patch } : item,
       ),
-    };
-    setRequest(next);
+    });
   }
 
   function addItem() {
     const accountId = expenseAccounts[0] ?? committee.accounts[0];
-    const next = {
+    setRequest({
       ...request,
       lineItems: [
         ...request.lineItems,
@@ -105,8 +145,7 @@ export function CommitteeWorkspace({ committee }: { committee: Committee }) {
           amount: 0,
         },
       ],
-    };
-    setRequest(next);
+    });
   }
 
   function removeItem(id: string) {
@@ -118,12 +157,17 @@ export function CommitteeWorkspace({ committee }: { committee: Committee }) {
 
   return (
     <div className="space-y-10">
-      <section className="grid gap-4 sm:grid-cols-3">
+      <section className="grid gap-4 sm:grid-cols-4">
         <Stat label={`${approvedYear} approved`} value={money(lastPlan)} />
         <Stat
           label={`2025 ${actualLabel(2025).toLowerCase()}`}
           value={money(lastActual)}
           hint="From the Tessier December 2025 board packet."
+        />
+        <Stat
+          label={`${operatingYear} year-end forecast`}
+          value={money(yeTotal)}
+          hint="Uses the shared treasurer forecast when set."
         />
         <Stat
           label={`${requestYear} request`}
@@ -148,7 +192,8 @@ export function CommitteeWorkspace({ committee }: { committee: Committee }) {
           </div>
           <div className="flex gap-3 text-xs text-muted">
             <span className="inline-flex items-center gap-1">
-              <i className="inline-block h-2.5 w-2.5 rounded-sm bg-brass/80" /> Plan
+              <i className="inline-block h-2.5 w-2.5 rounded-sm bg-brass/80" />{" "}
+              Plan
             </span>
             <span className="inline-flex items-center gap-1">
               <i className="inline-block h-2.5 w-2.5 rounded-sm bg-pine" /> Actual
@@ -210,9 +255,8 @@ export function CommitteeWorkspace({ committee }: { committee: Committee }) {
               {requestYear} request
             </h2>
             <p className="mt-1 max-w-xl text-sm text-muted">
-              Add the same kind of line items you used to put in the committee
-              worksheet: a short description, Tessier account, and amount.
-              Submit when the packet is ready for the treasurer.
+              Add line items, then Save. Save puts this {requestYear} request
+              into the Board Budget for the treasurer.
             </p>
           </div>
           <span
@@ -222,7 +266,7 @@ export function CommitteeWorkspace({ committee }: { committee: Committee }) {
                 : "bg-parchment text-forest"
             }`}
           >
-            {request.status}
+            {statusLabel(request)}
           </span>
         </div>
 
@@ -293,10 +337,13 @@ export function CommitteeWorkspace({ committee }: { committee: Committee }) {
                     <input
                       type="number"
                       step="1"
-                      value={item.amount}
+                      value={item.amount ?? ""}
                       onChange={(event) =>
                         updateItem(item.id, {
-                          amount: Number(event.target.value) || 0,
+                          amount:
+                            event.target.value === ""
+                              ? null
+                              : Number(event.target.value) || 0,
                         })
                       }
                       className="w-28 rounded-lg border border-forest/15 bg-cream px-2 py-1.5 text-right tabular-nums"
@@ -334,27 +381,26 @@ export function CommitteeWorkspace({ committee }: { committee: Committee }) {
           </button>
           <button
             type="button"
-            onClick={() => persist({ ...request, status: "draft" })}
+            onClick={() => void persist(request)}
             className="rounded-full bg-forest px-4 py-2 text-sm font-semibold text-cream"
           >
-            Save draft
-          </button>
-          <button
-            type="button"
-            onClick={() => persist({ ...request, status: "submitted" })}
-            className="rounded-full bg-brass px-4 py-2 text-sm font-semibold text-forest-deep"
-          >
-            Submit to treasurer
+            Save
           </button>
           <span className="text-xs text-muted">
             {saving === "saving"
               ? "Saving…"
               : saving === "saved"
-                ? "Saved"
+                ? "Saved — now on the Board Budget"
                 : saving === "error"
                   ? "Could not save"
-                  : null}
+                  : `Save puts the ${requestYear} request into the Board Budget.`}
           </span>
+          <Link
+            href="/budget/full"
+            className="text-sm text-pine underline decoration-brass underline-offset-4"
+          >
+            Open Board Budget
+          </Link>
         </div>
       </section>
     </div>

@@ -1,4 +1,6 @@
 import history from "@/data/budget-history.json";
+import statements from "@/data/ytd-statements.json";
+import { yearEndForecast as resolveYearEnd } from "@/lib/forecast";
 
 export type AccountKind = "revenue" | "expense";
 
@@ -25,7 +27,9 @@ export type LineItem = {
   id: string;
   accountId: string;
   description: string;
-  amount: number;
+  amount: number | null;
+  /** Treasurer Board Revised Budget amount for this account line. */
+  planAmount?: number | null;
   months?: number[] | null;
 };
 
@@ -37,8 +41,35 @@ export type CommitteeRequest = {
   lineItems: LineItem[];
 };
 
+export type YtdStatement = {
+  id: string;
+  asOfYear: number;
+  asOfMonth: number;
+  label: string;
+  kind: string;
+  source?: string;
+  accounts: Record<string, number>;
+  totals?: {
+    income?: { month?: number; ytd?: number };
+    expense?: { month?: number; ytd?: number };
+  };
+};
+
 export type RequestStore = {
   requestYear: number;
+  operatingYear: number;
+  asOfMonth?: number;
+  ytdYear?: number;
+  ytdStatementId?: string;
+  /** Tessier YTD actuals for the operating year (seeded from statements). */
+  ytdActual: Record<string, number>;
+  /**
+   * Treasurer-adjusted  year-end forecasts by account. When set, every view
+   * that shows a 2026 year-end forecast must use these values.
+   */
+  yeForecast: Record<string, number>;
+  /** Optional monthly board budget overrides (12 months). */
+  monthlyBudget: Record<string, number[]>;
   committees: Record<string, CommitteeRequest>;
 };
 
@@ -47,6 +78,9 @@ export const accounts = history.accounts as Account[];
 export const committees = history.committees as Committee[];
 export const approvedYear = history.approvedYear;
 export const requestYear = history.requestYear;
+/** Operating / forecast year (current Tessier year). */
+export const operatingYear = 2026;
+export const ytdStatements = statements as YtdStatement[];
 
 const accountById = new Map(accounts.map((account) => [account.id, account]));
 
@@ -88,15 +122,76 @@ export function committeeActual(committee: Committee, year: number) {
   return values.reduce((sum, value) => sum + value, 0);
 }
 
-export function requestTotal(request: CommitteeRequest | undefined) {
-  if (!request) return 0;
-  return request.lineItems.reduce((sum, item) => sum + (item.amount || 0), 0);
+export function latestStatement(year = operatingYear) {
+  return ytdStatements
+    .filter((statement) => statement.asOfYear === year)
+    .sort((a, b) => a.asOfMonth - b.asOfMonth)
+    .at(-1);
 }
 
-export function requestByAccount(request: CommitteeRequest | undefined) {
+export function statementAsOfLabel(statement: YtdStatement | undefined) {
+  if (!statement) return null;
+  const day = new Date(statement.asOfYear, statement.asOfMonth, 0).getDate();
+  return new Date(
+    statement.asOfYear,
+    statement.asOfMonth - 1,
+    day,
+  ).toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+export function emptyStore(): RequestStore {
+  const statement = latestStatement(operatingYear);
+  return {
+    requestYear,
+    operatingYear,
+    asOfMonth: statement?.asOfMonth,
+    ytdYear: operatingYear,
+    ytdStatementId: statement?.id,
+    ytdActual: statement ? { ...statement.accounts } : {},
+    yeForecast: {},
+    monthlyBudget: {},
+    committees: {},
+  };
+}
+
+export function lineBoardAmount(item: LineItem) {
+  return item.planAmount ?? item.amount ?? 0;
+}
+
+export function requestTotal(
+  request: CommitteeRequest | undefined,
+  kind?: AccountKind,
+) {
+  if (!request) return 0;
+  return request.lineItems.reduce((sum, item) => {
+    if (kind && getAccount(item.accountId)?.kind !== kind) return sum;
+    return sum + (item.amount || 0);
+  }, 0);
+}
+
+export function boardRevisedTotal(
+  request: CommitteeRequest | undefined,
+  kind?: AccountKind,
+) {
+  if (!request) return 0;
+  return request.lineItems.reduce((sum, item) => {
+    if (kind && getAccount(item.accountId)?.kind !== kind) return sum;
+    return sum + lineBoardAmount(item);
+  }, 0);
+}
+
+export function requestByAccount(
+  request: CommitteeRequest | undefined,
+  mode: "request" | "plan" = "request",
+) {
   const totals: Record<string, number> = {};
   for (const item of request?.lineItems ?? []) {
-    totals[item.accountId] = (totals[item.accountId] ?? 0) + (item.amount || 0);
+    const amount = mode === "plan" ? lineBoardAmount(item) : item.amount || 0;
+    totals[item.accountId] = (totals[item.accountId] ?? 0) + amount;
   }
   return totals;
 }
@@ -104,15 +199,20 @@ export function requestByAccount(request: CommitteeRequest | undefined) {
 export function aggregateAccounts(store: RequestStore) {
   const submitted: Record<string, number> = {};
   const drafts: Record<string, number> = {};
+  const plans: Record<string, number> = {};
   for (const committee of committees) {
     const request = store.committees[committee.slug];
-    const byAccount = requestByAccount(request);
+    const byRequest = requestByAccount(request, "request");
+    const byPlan = requestByAccount(request, "plan");
     const target = request?.status === "submitted" ? submitted : drafts;
-    for (const [accountId, amount] of Object.entries(byAccount)) {
+    for (const [accountId, amount] of Object.entries(byRequest)) {
       target[accountId] = (target[accountId] ?? 0) + amount;
     }
+    for (const [accountId, amount] of Object.entries(byPlan)) {
+      plans[accountId] = (plans[accountId] ?? 0) + amount;
+    }
   }
-  return { submitted, drafts };
+  return { submitted, drafts, plans };
 }
 
 export function emptyRequest(): CommitteeRequest {
@@ -137,10 +237,55 @@ export function seedFromApproved(committee: Committee): CommitteeRequest {
         id: `${id}-carry`,
         accountId: id,
         description: `Carry forward ${approvedYear} plan`,
-        amount: planFor(id, approvedYear),
+        amount: planFor(id, approvedYear) || null,
       }))
-      .filter((item) => item.amount !== 0),
+      .filter((item) => (item.amount || 0) !== 0),
   };
+}
+
+/**
+ * Prepare a committee packet for the Board Budget / Treasurer view.
+ * Save always marks the packet submitted so it appears in the rollup.
+ * Preserves existing Board Revised planAmount when the treasurer already set one.
+ */
+export function prepareForBoardBudget(
+  next: CommitteeRequest,
+  previous: CommitteeRequest | undefined,
+  preservePlanAmount = false,
+): CommitteeRequest {
+  const byId = new Map((previous?.lineItems ?? []).map((item) => [item.id, item]));
+  const byAccount = new Map(
+    (previous?.lineItems ?? []).map((item) => [item.accountId, item]),
+  );
+  return {
+    ...next,
+    status: "submitted",
+    lineItems: next.lineItems.map((item) => {
+      if (preservePlanAmount && item.planAmount != null) return item;
+      const prior = byId.get(item.id) ?? byAccount.get(item.accountId);
+      const priorPlan = prior?.planAmount ?? null;
+      const priorAmount = prior?.amount ?? null;
+      return {
+        ...item,
+        planAmount:
+          priorPlan != null && priorPlan !== priorAmount
+            ? priorPlan
+            : item.amount,
+      };
+    }),
+  };
+}
+
+export function ensureCommitteeAccounts(
+  committee: Committee,
+  request: CommitteeRequest,
+): CommitteeRequest {
+  const existing = new Set(request.lineItems.map((item) => item.accountId));
+  const missing = seedFromApproved(committee).lineItems.filter(
+    (item) => !existing.has(item.accountId),
+  );
+  if (missing.length === 0) return request;
+  return { ...request, lineItems: [...request.lineItems, ...missing] };
 }
 
 export function money(value: number | undefined | null) {
@@ -183,4 +328,73 @@ export function yearColumnNote(year: number) {
   if (kind === "year-end") return "year-end";
   if (year === approvedYear) return "plan only";
   return "";
+}
+
+export function committeeExpenseAccounts(committee: Committee) {
+  return committee.accounts.filter((id) => getAccount(id)?.kind === "expense");
+}
+
+export function committeeRevenueAccounts(committee: Committee) {
+  return committee.accounts.filter((id) => getAccount(id)?.kind === "revenue");
+}
+
+/** Site-wide YE forecast for one account from the shared store. */
+export function storeYearEndForecast(
+  store: RequestStore,
+  accountId: string,
+  asOfMonth?: number,
+) {
+  const month = asOfMonth ?? store.asOfMonth ?? latestStatement()?.asOfMonth ?? 7;
+  const ytd = store.ytdActual[accountId] ?? 0;
+  return resolveYearEnd(accountId, ytd, month, store.yeForecast[accountId]);
+}
+
+export function committeeYearEndForecast(
+  store: RequestStore,
+  committee: Committee,
+  kind: AccountKind = "expense",
+) {
+  const month = store.asOfMonth ?? latestStatement()?.asOfMonth ?? 7;
+  return committee.accounts
+    .filter((id) => getAccount(id)?.kind === kind)
+    .reduce((sum, id) => sum + storeYearEndForecast(store, id, month), 0);
+}
+
+/**
+ * Apply treasurer YE forecast edits. Values that match the auto-projection
+ * are cleared so the site keeps using live seasonality until overridden again.
+ */
+export function applyYeForecastOverrides(
+  store: RequestStore,
+  edits: Record<string, number | null | undefined>,
+): RequestStore {
+  const next = { ...store.yeForecast };
+  const month = store.asOfMonth ?? latestStatement()?.asOfMonth ?? 7;
+  let changed = false;
+  for (const [accountId, raw] of Object.entries(edits)) {
+    const projected = Math.round(
+      resolveYearEnd(accountId, store.ytdActual[accountId] ?? 0, month, null),
+    );
+    const value =
+      raw == null || !Number.isFinite(raw)
+        ? null
+        : Math.max(0, Math.round(raw));
+    if (value == null || value === projected) {
+      if (accountId in next) {
+        delete next[accountId];
+        changed = true;
+      }
+      continue;
+    }
+    if (next[accountId] !== value) {
+      next[accountId] = value;
+      changed = true;
+    }
+  }
+  return changed ? { ...store, yeForecast: next } : store;
+}
+
+export function statusLabel(request: CommitteeRequest | undefined) {
+  if (!request) return "Not started";
+  return request.status === "submitted" ? "Submitted" : "Not yet submitted";
 }
