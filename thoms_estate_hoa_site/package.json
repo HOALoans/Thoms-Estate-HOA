@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --tsconfig tsconfig.json --test scripts/budget-sync.test.ts"
   },
   "dependencies": {
     "lucide-react": "^0.476.0",
@@ -22,6 +23,7 @@
     "@types/react-dom": "^19",
     "postcss": "^8.5.3",
     "tailwindcss": "^4.0.9",
+    "tsx": "^4.23.12",
     "typescript": "^5"
   },
   "packageManager": "pnpm@10.5.2",

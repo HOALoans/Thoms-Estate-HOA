@@ -24,7 +24,12 @@ export default function BudgetPage() {
           December). Years on file: 2020, 2021, 2022, 2023, and 2025. 2026 is
           the current approved plan (that year is not closed). A 2024 year-end
           packet was not in the drop. Each committee can start from the 2026
-          plan, then edit, save a draft, or submit a packet.{" "}
+          plan, then Save — that puts the {requestYear} packet on the{" "}
+          <Link href="/budget/full" className="underline decoration-brass">
+            Board Budget
+          </Link>{" "}
+          for the treasurer. Treasurer year-end forecast adjustments on that
+          page apply site-wide.{" "}
           <Link href="/documents" className="underline decoration-brass">
             Public governing documents stay on the documents page.
           </Link>

@@ -1,34 +1,48 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   aggregateAccounts,
   approvedYear,
   actualLabel,
+  boardRevisedTotal,
   committeeActual,
   committeePlan,
+  committeeYearEndForecast,
   committees,
+  emptyStore,
   getAccount,
   money,
+  operatingYear,
   planFor,
   requestTotal,
   requestYear,
+  statusLabel,
+  storeYearEndForecast,
   type RequestStore,
 } from "@/lib/budget";
+import { useTreasurer } from "@/lib/use-treasurer";
 
 export function BudgetOverview() {
+  const { isTreasurer } = useTreasurer();
   const [store, setStore] = useState<RequestStore | null>(null);
 
-  useEffect(() => {
-    void fetch("/api/budget/requests", { cache: "no-store" })
-      .then((res) => res.json())
-      .then(setStore);
+  const load = useCallback(async () => {
+    const res = await fetch("/api/budget/requests", { cache: "no-store" });
+    setStore((await res.json()) as RequestStore);
   }, []);
 
-  const data = store ?? { requestYear, committees: {} };
-  const { submitted, drafts } = useMemo(() => aggregateAccounts(data), [data]);
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const data = store ?? emptyStore();
+  const { submitted, drafts, plans } = useMemo(
+    () => aggregateAccounts(data),
+    [data],
+  );
 
   const volunteer = committees.filter((committee) => !committee.boardManaged);
   const board = committees.find((committee) => committee.boardManaged);
@@ -43,8 +57,17 @@ export function BudgetOverview() {
       ? sum + requestTotal(request)
       : sum;
   }, 0);
+  const boardRevisedExpense = volunteer.reduce((sum, committee) => {
+    const request = data.committees[committee.slug];
+    return request ? sum + boardRevisedTotal(request) : sum;
+  }, 0);
   const volunteerPlan = volunteer.reduce(
     (sum, committee) => sum + committeePlan(committee, approvedYear),
+    0,
+  );
+  const yeForecastTotal = volunteer.reduce(
+    (sum, committee) =>
+      sum + committeeYearEndForecast(data, committee, "expense"),
     0,
   );
 
@@ -54,29 +77,57 @@ export function BudgetOverview() {
     .filter((id) => getAccount(id)?.kind === "expense");
 
   const proposedTotal = expenseAccounts.reduce((sum, id) => {
-    const amount = submitted[id] || drafts[id] || planFor(id, approvedYear);
+    const amount =
+      plans[id] || submitted[id] || drafts[id] || planFor(id, approvedYear);
     return sum + amount;
   }, 0);
 
   return (
     <div className="space-y-10">
-      <section className="grid gap-4 sm:grid-cols-4">
+      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <Stat label={`${approvedYear} committee plan`} value={money(volunteerPlan)} />
+        <Stat
+          label={`${operatingYear} year-end forecast`}
+          value={money(yeForecastTotal)}
+          hint="Shared treasurer overrides apply site-wide."
+        />
         <Stat label={`${requestYear} submitted`} value={money(submittedExpense)} />
         <Stat label="Still in draft" value={money(draftExpense)} />
+        {isTreasurer ? (
+          <Stat
+            label={`${requestYear} Board Revised`}
+            value={money(boardRevisedExpense)}
+          />
+        ) : null}
         <Stat
           label={`${requestYear} proposed operating`}
           value={money(proposedTotal)}
-          hint="Submitted amounts, else drafts, else last approved plan."
+          hint="Board Revised if set, else submitted, else drafts, else last approved."
         />
       </section>
+
+      <div className="flex flex-wrap gap-3">
+        <Link
+          href="/budget/full"
+          className="rounded-full bg-brass px-4 py-2 text-sm font-semibold text-forest-deep"
+        >
+          Board Budget / Treasurer view
+        </Link>
+        <Link
+          href="/login?next=/budget/full"
+          className="rounded-full border border-forest/20 px-4 py-2 text-sm text-forest"
+        >
+          Treasurer login
+        </Link>
+      </div>
 
       <section>
         <h2 className="font-display text-3xl text-forest">Committees</h2>
         <p className="mt-2 max-w-2xl text-sm text-muted">
           Each chair opens a workspace, reviews historical plan vs actual, and
-          submits a {requestYear} packet. Totals on this page update as packets
-          are saved.
+          Saves a {requestYear} packet into the Board Budget. Totals update as
+          packets are saved. Year-end forecast uses the shared treasurer number
+          when one is set.
         </p>
         <div className="mt-5 grid gap-3">
           {volunteer.map((committee) => {
@@ -84,18 +135,26 @@ export function BudgetOverview() {
             const plan = committeePlan(committee, approvedYear);
             const ytd = committeeActual(committee, 2025);
             const asked = requestTotal(request);
+            const ye = committeeYearEndForecast(data, committee, "expense");
             return (
               <Link
                 key={committee.slug}
                 href={`/budget/${committee.slug}`}
-                className="grid gap-2 rounded-2xl border border-forest/10 bg-white p-4 transition hover:border-brass/60 sm:grid-cols-[1fr_auto_auto_auto_auto]"
+                className="grid gap-2 rounded-2xl border border-forest/10 bg-white p-4 transition hover:border-brass/60 sm:grid-cols-[1fr_auto_auto_auto_auto_auto]"
               >
                 <div>
                   <p className="font-semibold text-forest">{committee.name}</p>
                   <p className="text-sm text-muted">{committee.blurb}</p>
                 </div>
                 <Cell label={`${approvedYear} plan`} value={money(plan)} />
-                <Cell label={`2025 ${actualLabel(2025).toLowerCase()}`} value={money(ytd)} />
+                <Cell
+                  label={`2025 ${actualLabel(2025).toLowerCase()}`}
+                  value={money(ytd)}
+                />
+                <Cell
+                  label={`${operatingYear} YE forecast`}
+                  value={money(ye)}
+                />
                 <Cell
                   label={`${requestYear} request`}
                   value={request ? money(asked) : "—"}
@@ -109,7 +168,7 @@ export function BudgetOverview() {
                         : "bg-cream text-muted"
                   }`}
                 >
-                  {request?.status ?? "not started"}
+                  {statusLabel(request)}
                 </span>
               </Link>
             );
@@ -131,17 +190,20 @@ export function BudgetOverview() {
           {requestYear} operating budget (rolled up)
         </h2>
         <p className="mt-2 max-w-2xl text-sm text-muted">
-          Submitted packets fill the proposed column. Drafts are shown beside
-          them so in-progress work is visible without being treated as final.
-          Accounts with no packet yet keep the {approvedYear} plan.
+          Submitted packets fill the proposed column. The {operatingYear}{" "}
+          year-end forecast column always comes from the shared store so
+          treasurer adjustments show everywhere.
         </p>
         <div className="mt-5 overflow-x-auto rounded-2xl border border-forest/10 bg-white">
-          <table className="w-full min-w-[44rem] text-left text-sm">
+          <table className="w-full min-w-[52rem] text-left text-sm">
             <thead className="bg-parchment/80 text-xs tracking-wide text-muted uppercase">
               <tr>
                 <th className="px-4 py-3">Acct</th>
                 <th className="px-4 py-3">Description</th>
                 <th className="px-4 py-3 text-right">{approvedYear} plan</th>
+                <th className="px-4 py-3 text-right">
+                  {operatingYear} YE forecast
+                </th>
                 <th className="px-4 py-3 text-right">
                   {requestYear} submitted
                 </th>
@@ -154,7 +216,9 @@ export function BudgetOverview() {
                 const plan = planFor(id, approvedYear);
                 const sub = submitted[id] ?? 0;
                 const draft = drafts[id] ?? 0;
-                const proposed = sub || draft || plan;
+                const proposed = plans[id] || sub || draft || plan;
+                const ye = storeYearEndForecast(data, id);
+                const overridden = data.yeForecast[id] != null;
                 return (
                   <tr key={id} className="border-t border-forest/10">
                     <td className="px-4 py-2 tabular-nums text-muted">{id}</td>
@@ -163,6 +227,18 @@ export function BudgetOverview() {
                     </td>
                     <td className="px-4 py-2 text-right tabular-nums">
                       {money(plan)}
+                    </td>
+                    <td
+                      className={`px-4 py-2 text-right tabular-nums ${
+                        overridden ? "font-semibold text-forest" : ""
+                      }`}
+                    >
+                      {money(ye)}
+                      {overridden ? (
+                        <span className="ml-1 text-[10px] tracking-wide text-brass-dark uppercase">
+                          adj
+                        </span>
+                      ) : null}
                     </td>
                     <td className="px-4 py-2 text-right tabular-nums">
                       {sub ? money(sub) : "—"}

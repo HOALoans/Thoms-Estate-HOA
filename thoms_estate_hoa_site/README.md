@@ -6,26 +6,43 @@ This is the association site (documents, architectural review, meetings, residen
 
 ## Local development
 
+From the app directory:
+
 ```bash
+cd thoms_estate_hoa_site
 pnpm install
 pnpm dev
+pnpm test
 ```
 
 The app runs at [http://localhost:3000](http://localhost:3000).
 
 ## Committee budget workspace
 
-`/budget` is the treasurer roll-up. Each committee has a workspace at `/budget/[name]` (for example `/budget/landscape`).
+- `/budget` — committee list and rollup (reads the shared store)
+- `/budget/[name]` — chair workspace. **Save** marks the 2027 packet submitted and writes it into the Board Budget
+- `/budget/full` — Treasurer / Board Budget view (shows saved committee packets; edit 2026 year-end forecasts)
+- `/login` — treasurer password
 
-Historical plan vs actual comes from Tessier year-end board packets (2020, 2021, 2022, 2023, 2025). 2026 is the current approved plan. Chairs enter a **2027** request as line items; submitted packets are stored in `data/requests.json` and aggregated into the proposed operating budget.
+Committee Saves and treasurer year-end forecast edits share one durable store (`/api/budget/requests` + `/api/budget/forecast`). Forecast overrides live in `yeForecast` and are what every page uses for the 2026 year-end column.
 
-On Vercel, that JSON file is not a durable database. Use a persistent host (or later, Postgres) if multiple chairs will submit in production.
+### Production persistence (required on Vercel)
+
+Set these on the Vercel project:
+
+- `TREASURER_PASSWORD` — treasurer login
+- `TREASURER_SESSION_SECRET` — optional cookie signing secret (defaults to the password)
+- `KV_REST_API_URL` + `KV_REST_API_TOKEN` — Vercel KV (or compatible) so Saves survive across serverless instances
+
+Without KV, local/dev uses `thoms_estate_hoa_site/data/requests.json`. That file is **not** durable on Vercel.
+
+Historical plan vs actual comes from Tessier year-end board packets (2020, 2021, 2022, 2023, 2025). 2026 is the current approved / operating year with Jul 2026 YTD on file.
 
 ## Deploy to this domain
 
 `www.thomsestatehoa.com` is currently a Namecheap parking page.
 
-1. In Vercel, **Import Git Repository** and choose this repo (`HOALoans/Thoms-Estate-HOA`). Leave Root Directory blank — the Next.js app is at the repo root.
+1. In Vercel, **Import Git Repository** and choose this repo (`HOALoans/Thoms-Estate-HOA`). Set **Root Directory** to `thoms_estate_hoa_site`.
 2. In Namecheap Advanced DNS:
    - `CNAME` for `www` → `cname.vercel-dns.com` (or the value Vercel shows)
    - Apex `thomsestatehoa.com` → Vercel A record `10.0.1.2`, or an ALIAS/CNAME flattening record if Namecheap offers it
